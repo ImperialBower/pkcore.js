@@ -71,6 +71,27 @@ most common mistake:
   **wrong** loop terminator. Use `dealer.table.isGameOver()`, which flips as soon
   as the river betting closes.
 
+## CI and releasing
+
+- `ci.yml` runs on push/PR to `main`: `cargo fmt --check`, `cargo clippy -D
+  warnings`, `npm run build`, `npm test`, `npm run typecheck`, then a
+  **`git diff --exit-code` on `index.js` and `index.d.ts`**. That last step is
+  the one that catches a signature change nobody rebuilt: the generated
+  bindings are committed, so stale ones show up as a dirty tree rather than as
+  wrong types on npm.
+- `publish.yml` runs on a `v*` tag. Five build jobs, then one publish job that
+  runs `napi create-npm-dirs` → `napi artifacts` → `napi pre-publish -t npm` →
+  `npm publish`.
+- **Do not add `--skip-optional-publish` to `pre-publish`.** It skips the
+  per-platform packages, which are the whole point — the root package is just a
+  loader that depends on them through `optionalDependencies`.
+- `aarch64-unknown-linux-gnu` builds with `--use-napi-cross`. `pkcore` pulls in
+  rusqlite and zstd, which compile C, so that leg needs a real cross toolchain
+  and will not build with plain `cargo --target`.
+- `artifacts/` and `npm/` are generated during a release and gitignored. Running
+  `napi artifacts` locally also copies `.node` files into the repo root; they
+  are gitignored too, but delete them or a stub can shadow a real build.
+
 ## Generated files
 
 `index.js` and `index.d.ts` are produced by `napi build` and **are committed**.

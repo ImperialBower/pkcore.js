@@ -700,12 +700,14 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.Board = nativeBinding.Board
 module.exports.Card = nativeBinding.Card
 module.exports.Cards = nativeBinding.Cards
 module.exports.Dealer = nativeBinding.Dealer
 module.exports.Eval = nativeBinding.Eval
 module.exports.ForcedBets = nativeBinding.ForcedBets
 module.exports.HandRank = nativeBinding.HandRank
+module.exports.HoleCards = nativeBinding.HoleCards
 module.exports.Player = nativeBinding.Player
 module.exports.PlayerAction = nativeBinding.PlayerAction
 module.exports.PokerSession = nativeBinding.PokerSession
@@ -718,5 +720,6 @@ module.exports.SessionStep = nativeBinding.SessionStep
 module.exports.Suit = nativeBinding.Suit
 module.exports.Table = nativeBinding.Table
 module.exports.TableAction = nativeBinding.TableAction
+module.exports.Two = nativeBinding.Two
 module.exports.Winnings = nativeBinding.Winnings
 module.exports.pkcoreVersion = nativeBinding.pkcoreVersion

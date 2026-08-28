@@ -12,6 +12,7 @@ use std::str::FromStr;
 use pkcore::analysis::eval::Eval as PkEval;
 use pkcore::analysis::hand_rank::HandRank as PkHandRank;
 use pkcore::arrays::seven::Seven as PkSeven;
+use pkcore::arrays::two::Two as PkTwo;
 use pkcore::card::Card as PkCard;
 use pkcore::cards::Cards as PkCards;
 use pkcore::casino::action::{PlayerAction as PkPlayerAction, TableAction as PkTableAction};
@@ -26,6 +27,8 @@ use pkcore::casino::table::{
     Player as PkPlayer, Seat as PkSeat, Seats as PkSeats, Table as PkTable,
 };
 use pkcore::casino::winnings::{PotWin as PkPotWin, Winnings as PkWinnings};
+use pkcore::play::board::Board as PkBoard;
+use pkcore::play::hole_cards::HoleCards as PkHoleCards;
 use pkcore::rank::Rank as PkRank;
 use pkcore::suit::Suit as PkSuit;
 use pkcore::Pile;
@@ -1417,5 +1420,149 @@ impl PokerSession {
     #[napi]
     pub fn count_funded(&self) -> u32 {
         self.0.count_funded() as u32
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Two
+// ---------------------------------------------------------------------------
+
+/// One player's two hole cards.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct Two(PkTwo);
+
+#[napi]
+impl Two {
+    /// Parses two cards, such as `"6♠ 6♥"` or `"AsKh"`.
+    #[napi(factory)]
+    pub fn parse(text: String) -> Result<Self, napi::Error<String>> {
+        PkTwo::from_str(&text).map(Two).map_err(pk_err)
+    }
+
+    #[napi(factory)]
+    pub fn from_cards(first: &Card, second: &Card) -> Result<Self, napi::Error<String>> {
+        PkTwo::new(first.0, second.0).map(Two).map_err(pk_err)
+    }
+
+    #[napi(getter)]
+    pub fn first(&self) -> Card {
+        Card(self.0.first())
+    }
+
+    #[napi(getter)]
+    pub fn second(&self) -> Card {
+        Card(self.0.second())
+    }
+
+    #[napi]
+    pub fn contains_card(&self, card: &Card) -> bool {
+        self.0.contains_card(card.0)
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HoleCards
+// ---------------------------------------------------------------------------
+
+/// Every player's hole cards for one hand, in seat order.
+#[napi]
+#[derive(Clone, Default)]
+pub struct HoleCards(PkHoleCards);
+
+#[napi]
+impl HoleCards {
+    /// An empty set. Add hands with `push`.
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Parses every player's hand, such as `"6♠ 6♥ 5♦ 5♣"` for two players.
+    #[napi(factory)]
+    pub fn parse(text: String) -> Result<Self, napi::Error<String>> {
+        PkHoleCards::from_str(&text).map(HoleCards).map_err(pk_err)
+    }
+
+    /// How many players have cards.
+    #[napi(getter)]
+    pub fn length(&self) -> u32 {
+        self.0.len() as u32
+    }
+
+    #[napi]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// One player's hand, or `null` if the index is past the end.
+    #[napi]
+    pub fn get(&self, index: u32) -> Option<Two> {
+        self.0.get(index as usize).map(|two| Two(*two))
+    }
+
+    #[napi]
+    pub fn push(&mut self, two: &Two) {
+        self.0.push(two.0);
+    }
+
+    #[napi]
+    pub fn to_array(&self) -> Vec<Two> {
+        self.0.iter().map(|two| Two(*two)).collect()
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Board
+// ---------------------------------------------------------------------------
+
+/// The five community cards: flop, turn, and river.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct Board(PkBoard);
+
+#[napi]
+impl Board {
+    /// Parses five community cards, such as `"9♣ 6♦ 5♥ 5♠ 8♠"`.
+    #[napi(factory)]
+    pub fn parse(text: String) -> Result<Self, napi::Error<String>> {
+        PkBoard::from_str(&text).map(Board).map_err(pk_err)
+    }
+
+    /// The three flop cards.
+    #[napi(getter)]
+    pub fn flop(&self) -> Cards {
+        Cards(Pile::cards(&self.0.flop))
+    }
+
+    #[napi(getter)]
+    pub fn turn(&self) -> Card {
+        Card(self.0.turn)
+    }
+
+    #[napi(getter)]
+    pub fn river(&self) -> Card {
+        Card(self.0.river)
+    }
+
+    /// The four cards visible at the turn: flop plus turn.
+    #[napi]
+    pub fn turn_cards(&self) -> Cards {
+        Cards(self.0.turn_cards())
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
     }
 }

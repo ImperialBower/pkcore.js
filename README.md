@@ -103,8 +103,18 @@ This is an early build. See **EPIC-85** in the `pkcore` repo for the full plan.
 | `Winnings`, `PotWin`, `SeatEquity` | Done |
 | `Dealer` + `TableAction` event log | Done |
 | `PokerSession`, `PlayerAction`, `SessionStep` | Done |
-| `Board`, `HoleCards` | Planned |
-| Prebuilt binaries for all five platforms | Planned |
+| `Board`, `HoleCards`, `Two` | Done |
+| Prebuilt binaries for all five platforms | CI wired; not published yet |
+
+## Try it
+
+```bash
+npm run demo
+```
+
+`demo.mjs` walks the whole surface: ranks and suits, parsing cards, evaluating
+THE HAND (Negreanu vs Hansen), building a table, playing a hand to showdown, and
+dumping the event log.
 
 ## Build from source
 
@@ -115,7 +125,17 @@ npm install
 npm run build      # release build, writes pkcore.<platform>.node
 npm test           # node --test
 npm run typecheck  # tsc --noEmit against index.d.ts
+npm run demo       # the showcase script
 ```
+
+## Releasing
+
+Push a `v*` tag. `.github/workflows/publish.yml` cross-compiles all five
+targets, assembles the per-platform npm packages, and publishes them plus the
+root `pkcore` package. It needs an `NPM_TOKEN` secret and an `npm` environment.
+
+`napi artifacts` fails if any target is missing, so a broken matrix leg stops
+the release instead of shipping a partial set.
 
 ## Licence
 

@@ -30,7 +30,8 @@
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo": "node demo.mjs"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.8.6",
