@@ -14,6 +14,13 @@ use pkcore::analysis::hand_rank::HandRank as PkHandRank;
 use pkcore::arrays::seven::Seven as PkSeven;
 use pkcore::card::Card as PkCard;
 use pkcore::cards::Cards as PkCards;
+use pkcore::casino::equity::seat_equity::SeatEquity as PkSeatEquity;
+use pkcore::casino::equity::seatbit::Seatbit as PkSeatbit;
+use pkcore::casino::game::ForcedBets as PkForcedBets;
+use pkcore::casino::table::{
+    Player as PkPlayer, Seat as PkSeat, Seats as PkSeats, Table as PkTable,
+};
+use pkcore::casino::winnings::{PotWin as PkPotWin, Winnings as PkWinnings};
 use pkcore::rank::Rank as PkRank;
 use pkcore::suit::Suit as PkSuit;
 use pkcore::Pile;
@@ -46,6 +53,14 @@ fn pk_err<E: std::fmt::Debug>(err: E) -> napi::Error<String> {
         .unwrap_or("PkError")
         .to_string();
     napi::Error::new(code, debug)
+}
+
+/// Clamps a JS number to a `pkcore` chip count.
+///
+/// JS has no unsigned integer, so a caller can hand us a negative. `pkcore`
+/// chip fields are `usize`, so the floor is 0 rather than a wrap.
+fn chips(amount: i64) -> usize {
+    amount.max(0) as usize
 }
 
 /// The `pkcore` version this addon was compiled against.
@@ -405,6 +420,500 @@ impl Eval {
     #[napi(getter)]
     pub fn best_five(&self) -> Cards {
         Cards(Pile::cards(&self.0.hand))
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ForcedBets
+// ---------------------------------------------------------------------------
+
+/// The blinds, ante, and bring-in a table charges.
+///
+/// Amounts are `i64` because `pkcore` stores chips as `usize`; napi-rs maps
+/// `i64` to a plain JS `number`, exact below 2^53. See EPIC-85 Scope.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct ForcedBets(PkForcedBets);
+
+#[napi]
+impl ForcedBets {
+    /// Blinds only. Ante and bring-in are zero.
+    #[napi(constructor)]
+    pub fn new(small_blind: i64, big_blind: i64) -> Self {
+        ForcedBets(PkForcedBets::new(chips(small_blind), chips(big_blind)))
+    }
+
+    #[napi(factory)]
+    pub fn with_ante(small_blind: i64, big_blind: i64, ante: i64) -> Self {
+        ForcedBets(PkForcedBets::new_with_ante(
+            chips(small_blind),
+            chips(big_blind),
+            chips(ante),
+        ))
+    }
+
+    #[napi(getter)]
+    pub fn small_blind(&self) -> i64 {
+        self.0.small_blind as i64
+    }
+
+    #[napi(getter)]
+    pub fn big_blind(&self) -> i64 {
+        self.0.big_blind as i64
+    }
+
+    #[napi(getter)]
+    pub fn ante(&self) -> i64 {
+        self.0.ante as i64
+    }
+
+    #[napi(getter)]
+    pub fn bring_in(&self) -> i64 {
+        self.0.bring_in as i64
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Player
+// ---------------------------------------------------------------------------
+
+/// One seated player's chips and state.
+#[napi]
+#[derive(Clone)]
+pub struct Player(PkPlayer);
+
+#[napi]
+impl Player {
+    #[napi(constructor)]
+    pub fn new(handle: String, chips_amount: i64) -> Self {
+        Player(PkPlayer::new_with_chips(handle, chips(chips_amount)))
+    }
+
+    #[napi(getter)]
+    pub fn handle(&self) -> String {
+        self.0.handle.clone()
+    }
+
+    /// Remaining stack: chips not yet committed this round.
+    #[napi(getter)]
+    pub fn chips(&self) -> i64 {
+        self.0.chips as i64
+    }
+
+    /// Chips committed to the current betting round.
+    #[napi(getter)]
+    pub fn bet(&self) -> i64 {
+        self.0.bet as i64
+    }
+
+    /// Chips committed across every round of the current hand.
+    #[napi(getter)]
+    pub fn chips_in_play(&self) -> i64 {
+        self.0.chips_in_play as i64
+    }
+
+    /// Buy-in plus every reload since.
+    #[napi(getter)]
+    pub fn withdrawn(&self) -> i64 {
+        self.0.withdrawn as i64
+    }
+
+    /// The player's state, such as `"Ready"` or `"Bet(100)"`.
+    #[napi(getter)]
+    pub fn state(&self) -> String {
+        format!("{:?}", self.0.state)
+    }
+
+    /// Stack plus everything committed this hand.
+    #[napi]
+    pub fn total_chip_count(&self) -> i64 {
+        self.0.total_chip_count() as i64
+    }
+
+    #[napi]
+    pub fn is_active(&self) -> bool {
+        self.0.is_active()
+    }
+
+    #[napi]
+    pub fn is_all_in(&self) -> bool {
+        self.0.is_all_in()
+    }
+
+    #[napi]
+    pub fn is_in_hand(&self) -> bool {
+        self.0.is_in_hand()
+    }
+
+    #[napi]
+    pub fn has_bet(&self) -> bool {
+        self.0.has_bet()
+    }
+
+    /// Adds chips to the stack and to `withdrawn`. Returns the new stack.
+    #[napi]
+    pub fn reload(&mut self, amount: i64) -> i64 {
+        self.0.reload(chips(amount)) as i64
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Seat
+// ---------------------------------------------------------------------------
+
+/// One chair at the table: a player plus their cards.
+#[napi]
+#[derive(Clone)]
+pub struct Seat(PkSeat);
+
+#[napi]
+impl Seat {
+    #[napi(constructor)]
+    pub fn new(player: &Player) -> Self {
+        Seat(PkSeat::new(player.0.clone()))
+    }
+
+    #[napi(getter)]
+    pub fn player(&self) -> Player {
+        Player(self.0.player.clone())
+    }
+
+    #[napi]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[napi]
+    pub fn is_active(&self) -> bool {
+        self.0.is_active()
+    }
+
+    #[napi]
+    pub fn is_in_hand(&self) -> bool {
+        self.0.is_in_hand()
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Seats
+// ---------------------------------------------------------------------------
+
+/// The ring of seats at a table, in order.
+#[napi]
+#[derive(Clone, Default)]
+pub struct Seats(PkSeats);
+
+#[napi]
+impl Seats {
+    /// An empty ring. Add chairs with `push`.
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Builds a ring from player names, in order, each with the same stack.
+    #[napi(factory)]
+    pub fn from_names(names: Vec<String>, starting_chips: i64) -> Self {
+        let stack = chips(starting_chips);
+        Seats(PkSeats::new(
+            names
+                .into_iter()
+                .map(|name| PkSeat::new(PkPlayer::new_with_chips(name, stack)))
+                .collect(),
+        ))
+    }
+
+    /// Appends a chair to the ring.
+    #[napi]
+    pub fn push(&mut self, seat: &Seat) {
+        self.0 .0.push(seat.0.clone());
+    }
+
+    /// The number of chairs, occupied or not.
+    #[napi(getter)]
+    pub fn size(&self) -> u32 {
+        u32::from(self.0.size())
+    }
+
+    #[napi]
+    pub fn count_occupied(&self) -> u32 {
+        u32::from(self.0.count_occupied())
+    }
+
+    #[napi]
+    pub fn get_seat(&self, index: u32) -> Option<Seat> {
+        u8::try_from(index)
+            .ok()
+            .and_then(|idx| self.0.get_seat(idx))
+            .map(|seat| Seat(seat.clone()))
+    }
+
+    /// Every chip on the table, across all seats.
+    #[napi]
+    pub fn total_chip_count(&self) -> i64 {
+        self.0.total_chip_count() as i64
+    }
+
+    /// The highest bet on the current street.
+    #[napi]
+    pub fn current_bet(&self) -> i64 {
+        self.0.current_bet() as i64
+    }
+
+    #[napi]
+    pub fn is_betting_complete(&self) -> bool {
+        self.0.is_betting_complete()
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Table
+// ---------------------------------------------------------------------------
+
+/// A poker table: the seats, the board, the pot, and the betting state.
+#[napi]
+#[derive(Clone)]
+pub struct Table(PkTable);
+
+#[napi]
+impl Table {
+    /// A no-limit hold'em table built from a ring of seats.
+    #[napi(factory)]
+    pub fn nlh_from_seats(seats: &Seats, forced: &ForcedBets) -> Self {
+        Table(PkTable::nlh_from_seats(seats.0.clone(), forced.0))
+    }
+
+    /// The number of chairs at the table.
+    #[napi]
+    pub fn seat_count(&self) -> u32 {
+        u32::from(self.0.seats.size())
+    }
+
+    #[napi(getter)]
+    pub fn seats(&self) -> Seats {
+        Seats(self.0.seats.clone())
+    }
+
+    #[napi(getter)]
+    pub fn name(&self) -> String {
+        self.0.name.clone()
+    }
+
+    #[napi(getter)]
+    pub fn forced(&self) -> ForcedBets {
+        ForcedBets(self.0.forced)
+    }
+
+    /// The betting phase, such as `"PreFlop"`.
+    #[napi(getter)]
+    pub fn phase(&self) -> String {
+        format!("{:?}", self.0.phase)
+    }
+
+    #[napi(getter)]
+    pub fn pot(&self) -> i64 {
+        self.0.pot as i64
+    }
+
+    /// The highest bet on the current street.
+    #[napi(getter)]
+    pub fn bet(&self) -> i64 {
+        self.0.bet as i64
+    }
+
+    /// The dealer button seat index.
+    #[napi(getter)]
+    pub fn button(&self) -> u32 {
+        u32::from(self.0.button)
+    }
+
+    #[napi(getter)]
+    pub fn board(&self) -> Cards {
+        Cards(self.0.board.clone())
+    }
+
+    /// Every chip in the system: seats plus bets plus pot.
+    #[napi]
+    pub fn table_chip_count(&self) -> i64 {
+        self.0.table_chip_count() as i64
+    }
+
+    /// The chip total snapshotted when the hand began. `end_hand` compares
+    /// against it to catch chip-conservation failures.
+    #[napi(getter)]
+    pub fn hand_chip_total(&self) -> i64 {
+        self.0.hand_chip_total as i64
+    }
+
+    #[napi]
+    pub fn count_occupied_seats(&self) -> u32 {
+        self.0.count_occupied_seats() as u32
+    }
+
+    #[napi]
+    pub fn is_preflop(&self) -> bool {
+        self.0.is_preflop()
+    }
+
+    #[napi]
+    pub fn is_game_over(&self) -> bool {
+        self.0.is_game_over()
+    }
+
+    #[napi]
+    pub fn min_raise(&self) -> i64 {
+        self.0.min_raise() as i64
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SeatEquity
+// ---------------------------------------------------------------------------
+
+/// A chip amount and the seats that share it.
+///
+/// More than one seat means a split pot.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct SeatEquity(PkSeatEquity);
+
+#[napi]
+impl SeatEquity {
+    #[napi(getter)]
+    pub fn chips(&self) -> i64 {
+        self.0.chips as i64
+    }
+
+    /// The seat indices sharing this amount.
+    #[napi(getter)]
+    pub fn seats(&self) -> Vec<u32> {
+        (0..PkSeatbit::CAPACITY)
+            .filter(|seat| self.0.seats.contains(*seat))
+            .map(u32::from)
+            .collect()
+    }
+
+    /// How many seats share this amount. Greater than 1 is a split pot.
+    #[napi]
+    pub fn count_ones(&self) -> u32 {
+        self.0.count_ones() as u32
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PotWin
+// ---------------------------------------------------------------------------
+
+/// One pot awarded to one or more seats, with the hand that won it.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct PotWin(PkPotWin);
+
+#[napi]
+impl PotWin {
+    #[napi(getter)]
+    pub fn equity(&self) -> SeatEquity {
+        SeatEquity(self.0.equity)
+    }
+
+    /// The chips in this pot.
+    #[napi(getter)]
+    pub fn chips(&self) -> i64 {
+        self.0.equity.chips as i64
+    }
+
+    /// The seat indices that won this pot.
+    #[napi(getter)]
+    pub fn seats(&self) -> Vec<u32> {
+        SeatEquity(self.0.equity).seats()
+    }
+
+    #[napi(getter)]
+    pub fn eval(&self) -> Eval {
+        Eval(self.0.eval)
+    }
+
+    #[napi(getter)]
+    pub fn hand_rank(&self) -> HandRank {
+        HandRank(self.0.eval.hand_rank)
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Winnings
+// ---------------------------------------------------------------------------
+
+/// Every pot awarded at the end of a hand, main pot first.
+///
+/// There is deliberately no `total()` here: summing the pots is one line of JS,
+/// and `pkcore.js` keeps all arithmetic in `pkcore`.
+#[napi]
+#[derive(Clone)]
+pub struct Winnings(PkWinnings);
+
+#[napi]
+impl Winnings {
+    /// The number of pots awarded. More than one means a side pot.
+    #[napi(getter)]
+    pub fn length(&self) -> u32 {
+        self.0.len() as u32
+    }
+
+    #[napi]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The main pot.
+    #[napi]
+    pub fn first(&self) -> PotWin {
+        PotWin(self.0.first())
+    }
+
+    /// The first side pot.
+    #[napi]
+    pub fn second(&self) -> PotWin {
+        PotWin(self.0.second())
+    }
+
+    #[napi]
+    pub fn to_array(&self) -> Vec<PotWin> {
+        self.0.vec().iter().map(|win| PotWin(*win)).collect()
     }
 
     #[napi(js_name = "toString")]

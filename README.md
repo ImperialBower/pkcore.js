@@ -32,6 +32,23 @@ console.log(deck.length)                 // 52
 console.log(deck.contains(Card.parse('A♠'))) // true
 ```
 
+Build a table:
+
+```js
+const { Table, Seats, ForcedBets } = require('pkcore')
+
+const seats = Seats.fromNames(['Alice', 'Bob'], 10_000)
+const table = Table.nlhFromSeats(seats, new ForcedBets(50, 100))
+
+console.log(table.seatCount())       // 2
+console.log(table.tableChipCount())  // 20000
+console.log(table.forced.bigBlind)   // 100
+```
+
+Chip counts are plain JS numbers and stay exact: `pkcore` stores them as
+`usize`, and this binding maps them through `i64`, so a stack above
+4,294,967,295 does not wrap.
+
 TypeScript definitions ship with the package; no `@types` install is needed.
 
 ## Errors
@@ -55,8 +72,10 @@ This is an early build. See **EPIC-85** in the `pkcore` repo for the full plan.
 | --- | --- |
 | `Card`, `Cards`, `Rank`, `Suit` | Done |
 | `Eval`, `HandRank` | Done |
+| `Table`, `Player`, `Seat`, `Seats`, `ForcedBets` | Done |
+| `Winnings`, `PotWin`, `SeatEquity` | Done |
 | `Board`, `HoleCards` | Planned |
-| `Table`, `Player`, `Seat`, `Seats`, `Dealer` | Planned |
+| `Dealer` + event log | Planned |
 | `PokerSession` | Planned |
 | Prebuilt binaries for all five platforms | Planned |
 

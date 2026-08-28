@@ -44,6 +44,22 @@ export declare class Eval {
 }
 
 /**
+ * The blinds, ante, and bring-in a table charges.
+ *
+ * Amounts are `i64` because `pkcore` stores chips as `usize`; napi-rs maps
+ * `i64` to a plain JS `number`, exact below 2^53. See EPIC-85 Scope.
+ */
+export declare class ForcedBets {
+  /** Blinds only. Ante and bring-in are zero. */
+  constructor(smallBlind: number, bigBlind: number)
+  static withAnte(smallBlind: number, bigBlind: number, ante: number): ForcedBets
+  get smallBlind(): number
+  get bigBlind(): number
+  get ante(): number
+  get bringIn(): number
+}
+
+/**
  * The strength of a five-card poker hand.
  *
  * `value` is the Cactus Kev rank: **lower is stronger**, 1 is a royal flush.
@@ -57,6 +73,43 @@ export declare class HandRank {
   get class(): string
   toString(): string
   equals(other: HandRank): boolean
+}
+
+/** One seated player's chips and state. */
+export declare class Player {
+  constructor(handle: string, chipsAmount: number)
+  get handle(): string
+  /** Remaining stack: chips not yet committed this round. */
+  get chips(): number
+  /** Chips committed to the current betting round. */
+  get bet(): number
+  /** Chips committed across every round of the current hand. */
+  get chipsInPlay(): number
+  /** Buy-in plus every reload since. */
+  get withdrawn(): number
+  /** The player's state, such as `"Ready"` or `"Bet(100)"`. */
+  get state(): string
+  /** Stack plus everything committed this hand. */
+  totalChipCount(): number
+  isActive(): boolean
+  isAllIn(): boolean
+  isInHand(): boolean
+  hasBet(): boolean
+  /** Adds chips to the stack and to `withdrawn`. Returns the new stack. */
+  reload(amount: number): number
+  toString(): string
+}
+
+/** One pot awarded to one or more seats, with the hand that won it. */
+export declare class PotWin {
+  get equity(): SeatEquity
+  /** The chips in this pot. */
+  get chips(): number
+  /** The seat indices that won this pot. */
+  get seats(): Array<number>
+  get eval(): Eval
+  get handRank(): HandRank
+  toString(): string
 }
 
 /**
@@ -91,6 +144,50 @@ export declare class Rank {
   equals(other: Rank): boolean
 }
 
+/** One chair at the table: a player plus their cards. */
+export declare class Seat {
+  constructor(player: Player)
+  get player(): Player
+  isEmpty(): boolean
+  isActive(): boolean
+  isInHand(): boolean
+  toString(): string
+}
+
+/**
+ * A chip amount and the seats that share it.
+ *
+ * More than one seat means a split pot.
+ */
+export declare class SeatEquity {
+  get chips(): number
+  /** The seat indices sharing this amount. */
+  get seats(): Array<number>
+  /** How many seats share this amount. Greater than 1 is a split pot. */
+  countOnes(): number
+  toString(): string
+}
+
+/** The ring of seats at a table, in order. */
+export declare class Seats {
+  /** An empty ring. Add chairs with `push`. */
+  constructor()
+  /** Builds a ring from player names, in order, each with the same stack. */
+  static fromNames(names: Array<string>, startingChips: number): Seats
+  /** Appends a chair to the ring. */
+  push(seat: Seat): void
+  /** The number of chairs, occupied or not. */
+  get size(): number
+  countOccupied(): number
+  getSeat(index: number): Seat | null
+  /** Every chip on the table, across all seats. */
+  totalChipCount(): number
+  /** The highest bet on the current street. */
+  currentBet(): number
+  isBettingComplete(): boolean
+  toString(): string
+}
+
 /** A card suit. */
 export declare class Suit {
   static spades(): Suit
@@ -103,6 +200,55 @@ export declare class Suit {
   letter(): string
   toString(): string
   equals(other: Suit): boolean
+}
+
+/** A poker table: the seats, the board, the pot, and the betting state. */
+export declare class Table {
+  /** A no-limit hold'em table built from a ring of seats. */
+  static nlhFromSeats(seats: Seats, forced: ForcedBets): Table
+  /** The number of chairs at the table. */
+  seatCount(): number
+  get seats(): Seats
+  get name(): string
+  get forced(): ForcedBets
+  /** The betting phase, such as `"PreFlop"`. */
+  get phase(): string
+  get pot(): number
+  /** The highest bet on the current street. */
+  get bet(): number
+  /** The dealer button seat index. */
+  get button(): number
+  get board(): Cards
+  /** Every chip in the system: seats plus bets plus pot. */
+  tableChipCount(): number
+  /**
+   * The chip total snapshotted when the hand began. `end_hand` compares
+   * against it to catch chip-conservation failures.
+   */
+  get handChipTotal(): number
+  countOccupiedSeats(): number
+  isPreflop(): boolean
+  isGameOver(): boolean
+  minRaise(): number
+  toString(): string
+}
+
+/**
+ * Every pot awarded at the end of a hand, main pot first.
+ *
+ * There is deliberately no `total()` here: summing the pots is one line of JS,
+ * and `pkcore.js` keeps all arithmetic in `pkcore`.
+ */
+export declare class Winnings {
+  /** The number of pots awarded. More than one means a side pot. */
+  get length(): number
+  isEmpty(): boolean
+  /** The main pot. */
+  first(): PotWin
+  /** The first side pot. */
+  second(): PotWin
+  toArray(): Array<PotWin>
+  toString(): string
 }
 
 /**
