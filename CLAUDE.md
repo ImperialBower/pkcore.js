@@ -71,13 +71,6 @@ most common mistake:
   **wrong** loop terminator. Use `dealer.table.isGameOver()`, which flips as soon
   as the river betting closes.
 
-## Known upstream noise
-
-`pkcore`'s `Dealer::start_hand` has an unconditional `println!`
-(`pkcore/src/casino/dealer.rs:297`) that dumps the whole table to stdout on every
-hand. It pollutes any Node process using this addon. Fixing it is a `pkcore`
-change, out of scope for EPIC-85.
-
 ## Generated files
 
 `index.js` and `index.d.ts` are produced by `napi build` and **are committed**.
