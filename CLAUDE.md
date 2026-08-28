@@ -49,6 +49,35 @@ change. `pkcoreVersion()` reads `CARGO_PKG_VERSION` and a test asserts it equals
   hand-write `#[napi(js_name = ...)]` except where JS demands a reserved shape,
   such as `toString`.
 
+## Two things that are deliberately missing
+
+- **`PokerSession::run_hand` is not bound.** It takes a Rust closure. Calling a
+  JS callback from inside a `&mut self` method would let that callback re-enter
+  the same session object and alias the mutable borrow — undefined behaviour,
+  and napi-rs does not guard against it. JS drives the loop with
+  `startHand` / `nextActor` / `applyAction` / `endHand` instead. Do not "fix"
+  this by adding a callback parameter.
+- **`Winnings` has no `total()`.** Summing the pots is one line of JS, and all
+  arithmetic belongs in `pkcore`.
+
+## Driving a hand
+
+`Dealer` and `PokerSession` stop on different signals. Getting this wrong is the
+most common mistake:
+
+- `PokerSession.nextActor()` returns `null` when betting is done, and deals each
+  street for you. This is the loop you want.
+- `Dealer.isHandInProgress()` stays `true` until `endHand()` runs, so it is the
+  **wrong** loop terminator. Use `dealer.table.isGameOver()`, which flips as soon
+  as the river betting closes.
+
+## Known upstream noise
+
+`pkcore`'s `Dealer::start_hand` has an unconditional `println!`
+(`pkcore/src/casino/dealer.rs:297`) that dumps the whole table to stdout on every
+hand. It pollutes any Node process using this addon. Fixing it is a `pkcore`
+change, out of scope for EPIC-85.
+
 ## Generated files
 
 `index.js` and `index.d.ts` are produced by `napi build` and **are committed**.

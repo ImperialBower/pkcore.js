@@ -14,9 +14,14 @@ use pkcore::analysis::hand_rank::HandRank as PkHandRank;
 use pkcore::arrays::seven::Seven as PkSeven;
 use pkcore::card::Card as PkCard;
 use pkcore::cards::Cards as PkCards;
+use pkcore::casino::action::{PlayerAction as PkPlayerAction, TableAction as PkTableAction};
+use pkcore::casino::dealer::{
+    Dealer as PkDealer, DealerAction as PkDealerAction, DealerError as PkDealerError,
+};
 use pkcore::casino::equity::seat_equity::SeatEquity as PkSeatEquity;
 use pkcore::casino::equity::seatbit::Seatbit as PkSeatbit;
 use pkcore::casino::game::ForcedBets as PkForcedBets;
+use pkcore::casino::session::{PokerSession as PkPokerSession, SessionStep as PkSessionStep};
 use pkcore::casino::table::{
     Player as PkPlayer, Seat as PkSeat, Seats as PkSeats, Table as PkTable,
 };
@@ -53,6 +58,30 @@ fn pk_err<E: std::fmt::Debug>(err: E) -> napi::Error<String> {
         .unwrap_or("PkError")
         .to_string();
     napi::Error::new(code, debug)
+}
+
+/// Recovers a Rust enum variant name from its `Debug` form.
+///
+/// Used for error codes and event kinds. Cheaper to maintain than a match with
+/// one arm per variant, and it does not go stale when `pkcore` adds one.
+fn variant_name<T: std::fmt::Debug>(value: &T, fallback: &str) -> String {
+    let debug = format!("{value:?}");
+    debug
+        .split(['(', ' ', '{'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+/// Converts a `DealerError` into a JS `Error` whose `.code` is the variant name.
+fn dealer_err(err: PkDealerError) -> napi::Error<String> {
+    napi::Error::new(variant_name(&err, "DealerError"), format!("{err:?}"))
+}
+
+/// Clamps a JS number to a seat index.
+fn seat_index(seat: u32) -> u8 {
+    seat.min(u32::from(u8::MAX)) as u8
 }
 
 /// Clamps a JS number to a `pkcore` chip count.
@@ -919,5 +948,474 @@ impl Winnings {
     #[napi(js_name = "toString")]
     pub fn to_js_string(&self) -> String {
         self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TableAction
+// ---------------------------------------------------------------------------
+
+/// One entry in a table's event log.
+///
+/// The variants carry different payloads, so rather than binding forty classes
+/// this exposes the shape `pkcore.py` settled on: a `kind` name plus the
+/// optional `seat` and `amount` the event concerns.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct TableAction(PkTableAction);
+
+#[napi]
+impl TableAction {
+    /// The event name, such as `"Bet"`, `"Fold"`, or `"DealtFlop"`.
+    ///
+    /// Read off the `Debug` form rather than a forty-arm match, so a new
+    /// `pkcore` variant appears here without a change to this crate.
+    #[napi(getter)]
+    pub fn kind(&self) -> String {
+        variant_name(&self.0, "TableAction")
+    }
+
+    /// The seat this event concerns, or `null`.
+    #[napi(getter)]
+    pub fn seat(&self) -> Option<u32> {
+        self.0.get_seat().map(u32::from)
+    }
+
+    /// The chip amount this event concerns, or `null`.
+    #[napi(getter)]
+    pub fn amount(&self) -> Option<i64> {
+        self.0.get_amount().map(|amount| amount as i64)
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dealer
+// ---------------------------------------------------------------------------
+
+/// Runs one hand at a table: seats players, deals, takes actions, pays out.
+///
+/// Every method that changes the table takes `&mut self`, matching `pkcore`'s
+/// own `Dealer`. `pkcore.py` had to make the same switch when EPIC-83 removed
+/// the interior-mutability table.
+#[napi]
+pub struct Dealer(PkDealer);
+
+#[napi]
+impl Dealer {
+    /// A dealer with an empty no-limit hold'em table of `seat_count` chairs.
+    #[napi(constructor)]
+    pub fn new(forced: &ForcedBets, seat_count: u32) -> Self {
+        Dealer(PkDealer::new(forced.0, seat_count.min(255) as u8))
+    }
+
+    /// A dealer for an already-built table.
+    #[napi(factory)]
+    pub fn from_table(table: &Table) -> Self {
+        Dealer(PkDealer::from_table(table.0.clone()))
+    }
+
+    // ── Seating ─────────────────────────────────────────────────────────────
+
+    /// Seats a player in the first open chair. Returns the seat index.
+    #[napi]
+    pub fn seat_player(&mut self, player: &Player) -> Result<u32, napi::Error<String>> {
+        self.0
+            .seat_player(player.0.clone())
+            .map(u32::from)
+            .map_err(dealer_err)
+    }
+
+    /// Seats a player in a named chair.
+    #[napi]
+    pub fn seat_player_at(
+        &mut self,
+        player: &Player,
+        seat: u32,
+    ) -> Result<(), napi::Error<String>> {
+        self.0
+            .seat_player_at(player.0.clone(), seat_index(seat))
+            .map_err(dealer_err)
+    }
+
+    #[napi]
+    pub fn remove_player(&mut self, seat: u32) -> Result<Player, napi::Error<String>> {
+        self.0
+            .remove_player(seat_index(seat))
+            .map(Player)
+            .map_err(dealer_err)
+    }
+
+    // ── Hand lifecycle ──────────────────────────────────────────────────────
+
+    /// Shuffles, posts blinds, and deals hole cards.
+    #[napi]
+    pub fn start_hand(&mut self) -> Result<(), napi::Error<String>> {
+        self.0.start_hand().map_err(dealer_err)
+    }
+
+    /// Collects bets and deals the next street.
+    #[napi]
+    pub fn advance_street(&mut self) -> Result<(), napi::Error<String>> {
+        self.0.advance_street().map_err(dealer_err)
+    }
+
+    /// Resolves the showdown and pays out.
+    #[napi]
+    pub fn end_hand(&mut self) -> Result<Winnings, napi::Error<String>> {
+        self.0.end_hand().map(Winnings).map_err(dealer_err)
+    }
+
+    // ── Player actions ──────────────────────────────────────────────────────
+
+    #[napi]
+    pub fn bet(&mut self, seat: u32, amount: i64) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Bet {
+            seat: seat_index(seat),
+            amount: chips(amount),
+        })
+    }
+
+    #[napi]
+    pub fn call(&mut self, seat: u32) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Call {
+            seat: seat_index(seat),
+        })
+    }
+
+    #[napi]
+    pub fn check(&mut self, seat: u32) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Check {
+            seat: seat_index(seat),
+        })
+    }
+
+    /// Raises the total bet to `amount`, not by `amount`.
+    #[napi]
+    pub fn raise_to(&mut self, seat: u32, amount: i64) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Raise {
+            seat: seat_index(seat),
+            amount: chips(amount),
+        })
+    }
+
+    #[napi]
+    pub fn all_in(&mut self, seat: u32) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::AllIn {
+            seat: seat_index(seat),
+        })
+    }
+
+    #[napi]
+    pub fn fold(&mut self, seat: u32) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Fold {
+            seat: seat_index(seat),
+        })
+    }
+
+    /// Marks a seat ready for the next hand. Lobby management, not an in-hand
+    /// action.
+    #[napi]
+    pub fn ready(&mut self, seat: u32) -> Result<(), napi::Error<String>> {
+        self.act(PkDealerAction::Ready {
+            seat: seat_index(seat),
+        })
+    }
+
+    // ── Reading the table ───────────────────────────────────────────────────
+
+    #[napi(getter)]
+    pub fn table(&self) -> Table {
+        Table(self.0.table.clone())
+    }
+
+    #[napi]
+    pub fn table_id(&self) -> String {
+        self.0.table_id().to_string()
+    }
+
+    #[napi]
+    pub fn is_hand_in_progress(&self) -> bool {
+        self.0.is_hand_in_progress()
+    }
+
+    #[napi]
+    pub fn next_to_act(&self) -> u32 {
+        u32::from(self.0.next_to_act())
+    }
+
+    #[napi]
+    pub fn pot(&self) -> i64 {
+        self.0.pot() as i64
+    }
+
+    /// The stack at a seat, or `null` if the chair is empty or out of range.
+    #[napi]
+    pub fn chips_at(&self, seat: u32) -> Option<i64> {
+        self.0
+            .chips_at(seat_index(seat))
+            .map(|amount| amount as i64)
+    }
+
+    /// Every event so far, oldest first.
+    ///
+    /// A plain array, not a `TableLog` wrapper class: arrays are native in JS.
+    #[napi]
+    pub fn event_log(&self) -> Vec<TableAction> {
+        self.0
+            .event_log()
+            .iter()
+            .map(|action| TableAction(*action))
+            .collect()
+    }
+}
+
+impl Dealer {
+    /// Shared body of every per-action method. Not exposed to JS: callers get
+    /// the named methods instead of an action union to build.
+    fn act(&mut self, action: PkDealerAction) -> Result<(), napi::Error<String>> {
+        self.0.act(action).map_err(dealer_err)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PlayerAction
+// ---------------------------------------------------------------------------
+
+/// What a player chooses to do when it is their turn.
+#[napi]
+#[derive(Clone, Copy)]
+pub struct PlayerAction(PkPlayerAction);
+
+#[napi]
+impl PlayerAction {
+    #[napi(factory)]
+    pub fn fold() -> Self {
+        PlayerAction(PkPlayerAction::Fold)
+    }
+
+    #[napi(factory)]
+    pub fn check() -> Self {
+        PlayerAction(PkPlayerAction::Check)
+    }
+
+    #[napi(factory)]
+    pub fn call() -> Self {
+        PlayerAction(PkPlayerAction::Call)
+    }
+
+    #[napi(factory)]
+    pub fn all_in() -> Self {
+        PlayerAction(PkPlayerAction::AllIn)
+    }
+
+    /// Opens a bet of `amount` chips.
+    #[napi(factory)]
+    pub fn bet(amount: i64) -> Self {
+        PlayerAction(PkPlayerAction::Bet(chips(amount)))
+    }
+
+    /// Raises the total bet **to** `amount`, not by `amount`.
+    #[napi(factory)]
+    pub fn raise(amount: i64) -> Self {
+        PlayerAction(PkPlayerAction::Raise(chips(amount)))
+    }
+
+    /// One of `"Fold"`, `"Check"`, `"Call"`, `"Bet"`, `"Raise"`, `"AllIn"`.
+    #[napi(getter)]
+    pub fn kind(&self) -> String {
+        variant_name(&self.0, "PlayerAction")
+    }
+
+    /// The chip amount for a bet or raise, otherwise `null`.
+    #[napi(getter)]
+    pub fn amount(&self) -> Option<i64> {
+        match self.0 {
+            PkPlayerAction::Bet(amount) | PkPlayerAction::Raise(amount) => Some(amount as i64),
+            _ => None,
+        }
+    }
+
+    #[napi(js_name = "toString")]
+    pub fn to_js_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SessionStep
+// ---------------------------------------------------------------------------
+
+/// What the session needs next.
+///
+/// `kind` is `"PlayerToAct"` (read `seat`), `"StreetAdvanced"`,
+/// `"HandComplete"`, or `"Failed"` (read `error`).
+#[napi]
+#[derive(Clone)]
+pub struct SessionStep(PkSessionStep);
+
+#[napi]
+impl SessionStep {
+    #[napi(getter)]
+    pub fn kind(&self) -> String {
+        variant_name(&self.0, "SessionStep")
+    }
+
+    /// The seat that must act, or `null` unless `kind` is `"PlayerToAct"`.
+    #[napi(getter)]
+    pub fn seat(&self) -> Option<u32> {
+        match self.0 {
+            PkSessionStep::PlayerToAct(seat) => Some(u32::from(seat)),
+            _ => None,
+        }
+    }
+
+    /// Why the hand cannot continue, or `null` unless `kind` is `"Failed"`.
+    ///
+    /// A failed hand is **not** resolvable with `endHand`; call `abortHand`.
+    #[napi(getter)]
+    pub fn error(&self) -> Option<String> {
+        match &self.0 {
+            PkSessionStep::Failed(err) => Some(format!("{err:?}")),
+            _ => None,
+        }
+    }
+
+    #[napi]
+    pub fn is_complete(&self) -> bool {
+        matches!(self.0, PkSessionStep::HandComplete)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PokerSession
+// ---------------------------------------------------------------------------
+
+/// A multi-hand game on one table: deal, act, showdown, repeat.
+///
+/// `pkcore`'s `PokerSession::run_hand` takes a Rust closure. It is
+/// deliberately **not** bound here. Calling a JS function from inside a
+/// `&mut self` method would let that callback re-enter the same session object
+/// and alias the mutable borrow, which is undefined behaviour. Drive the loop
+/// from JS instead — it reads better anyway:
+///
+/// ```js
+/// session.startHand()
+/// let seat
+/// while ((seat = session.nextActor()) !== null) {
+///   session.applyAction(seat, PlayerAction.call())
+/// }
+/// const winnings = session.endHand()
+/// ```
+#[napi]
+pub struct PokerSession(PkPokerSession);
+
+#[napi]
+impl PokerSession {
+    #[napi(constructor)]
+    pub fn new(table: &Table) -> Self {
+        PokerSession(PkPokerSession::new(table.0.clone()))
+    }
+
+    /// Shuffles, posts blinds, deals, and increments `handNumber`.
+    #[napi]
+    pub fn start_hand(&mut self) -> Result<(), napi::Error<String>> {
+        self.0.start_hand().map_err(pk_err)
+    }
+
+    /// The seat that must act next, or `null` when the betting is done.
+    ///
+    /// Deals the next street on its own when a betting round closes, so a
+    /// caller only ever loops on this one method.
+    #[napi]
+    pub fn next_actor(&mut self) -> Result<Option<u32>, napi::Error<String>> {
+        self.0
+            .next_actor()
+            .map(|seat| seat.map(u32::from))
+            .map_err(pk_err)
+    }
+
+    #[napi]
+    pub fn apply_action(
+        &mut self,
+        seat: u32,
+        action: &PlayerAction,
+    ) -> Result<(), napi::Error<String>> {
+        self.0
+            .apply_action(seat_index(seat), action.0)
+            .map_err(pk_err)
+    }
+
+    /// What the session needs next, without changing whose turn it is.
+    #[napi]
+    pub fn next_step(&mut self) -> SessionStep {
+        SessionStep(self.0.next_step())
+    }
+
+    /// Resolves the showdown and pays out.
+    #[napi]
+    pub fn end_hand(&mut self) -> Result<Winnings, napi::Error<String>> {
+        self.0.end_hand().map(Winnings).map_err(pk_err)
+    }
+
+    /// Returns every committed chip and resets the table after a failed hand.
+    /// Returns the number of chips returned.
+    #[napi]
+    pub fn abort_hand(&mut self) -> Result<i64, napi::Error<String>> {
+        self.0.abort_hand().map(|n| n as i64).map_err(pk_err)
+    }
+
+    #[napi]
+    pub fn is_hand_complete(&self) -> bool {
+        self.0.is_hand_complete()
+    }
+
+    #[napi]
+    pub fn is_hand_in_progress(&self) -> bool {
+        self.0.is_hand_in_progress()
+    }
+
+    /// How many hands have been started.
+    #[napi(getter)]
+    pub fn hand_number(&self) -> u32 {
+        self.0.hand_number
+    }
+
+    #[napi(getter)]
+    pub fn table(&self) -> Table {
+        Table(self.0.table.clone())
+    }
+
+    /// The full 52-card deck as shuffled at the start of the current hand, or
+    /// `null` before the first hand.
+    #[napi(getter)]
+    pub fn shuffled_deck(&self) -> Option<String> {
+        self.0.shuffled_deck_str.clone()
+    }
+
+    /// Applies new blinds at the start of the next hand.
+    #[napi]
+    pub fn set_blinds(&mut self, forced: &ForcedBets) {
+        self.0.set_blinds(forced.0);
+    }
+
+    /// Removes players with no chips. Returns the seats emptied.
+    #[napi]
+    pub fn eliminate_busted(&mut self) -> Vec<u32> {
+        self.0
+            .eliminate_busted()
+            .into_iter()
+            .map(u32::from)
+            .collect()
+    }
+
+    /// How many seated players still have chips.
+    #[napi]
+    pub fn count_funded(&self) -> u32 {
+        self.0.count_funded() as u32
     }
 }

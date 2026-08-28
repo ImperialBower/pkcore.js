@@ -49,6 +49,33 @@ Chip counts are plain JS numbers and stay exact: `pkcore` stores them as
 `usize`, and this binding maps them through `i64`, so a stack above
 4,294,967,295 does not wrap.
 
+Play a hand:
+
+```js
+const { Table, Seats, ForcedBets, PokerSession, PlayerAction } = require('pkcore')
+
+const table = Table.nlhFromSeats(
+  Seats.fromNames(['Alice', 'Bob', 'Cara'], 10_000),
+  new ForcedBets(50, 100),
+)
+const session = new PokerSession(table)
+
+session.startHand()
+
+let seat
+while ((seat = session.nextActor()) !== null) {
+  session.applyAction(seat, PlayerAction.call())   // everybody calls
+}
+
+const winnings = session.endHand()
+console.log(winnings.first().chips)  // pot size
+console.log(winnings.first().seats)  // [1]  -- winning seat indices
+```
+
+`session.nextActor()` deals each street for you and returns `null` when the
+betting is finished. `Dealer` is the lower-level alternative if you want to
+drive the streets yourself.
+
 TypeScript definitions ship with the package; no `@types` install is needed.
 
 ## Errors
@@ -74,9 +101,9 @@ This is an early build. See **EPIC-85** in the `pkcore` repo for the full plan.
 | `Eval`, `HandRank` | Done |
 | `Table`, `Player`, `Seat`, `Seats`, `ForcedBets` | Done |
 | `Winnings`, `PotWin`, `SeatEquity` | Done |
+| `Dealer` + `TableAction` event log | Done |
+| `PokerSession`, `PlayerAction`, `SessionStep` | Done |
 | `Board`, `HoleCards` | Planned |
-| `Dealer` + event log | Planned |
-| `PokerSession` | Planned |
 | Prebuilt binaries for all five platforms | Planned |
 
 ## Build from source

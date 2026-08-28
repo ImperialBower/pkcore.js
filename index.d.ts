@@ -28,6 +28,56 @@ export declare class Cards {
   toString(): string
 }
 
+/**
+ * Runs one hand at a table: seats players, deals, takes actions, pays out.
+ *
+ * Every method that changes the table takes `&mut self`, matching `pkcore`'s
+ * own `Dealer`. `pkcore.py` had to make the same switch when EPIC-83 removed
+ * the interior-mutability table.
+ */
+export declare class Dealer {
+  /** A dealer with an empty no-limit hold'em table of `seat_count` chairs. */
+  constructor(forced: ForcedBets, seatCount: number)
+  /** A dealer for an already-built table. */
+  static fromTable(table: Table): Dealer
+  /** Seats a player in the first open chair. Returns the seat index. */
+  seatPlayer(player: Player): number
+  /** Seats a player in a named chair. */
+  seatPlayerAt(player: Player, seat: number): void
+  removePlayer(seat: number): Player
+  /** Shuffles, posts blinds, and deals hole cards. */
+  startHand(): void
+  /** Collects bets and deals the next street. */
+  advanceStreet(): void
+  /** Resolves the showdown and pays out. */
+  endHand(): Winnings
+  bet(seat: number, amount: number): void
+  call(seat: number): void
+  check(seat: number): void
+  /** Raises the total bet to `amount`, not by `amount`. */
+  raiseTo(seat: number, amount: number): void
+  allIn(seat: number): void
+  fold(seat: number): void
+  /**
+   * Marks a seat ready for the next hand. Lobby management, not an in-hand
+   * action.
+   */
+  ready(seat: number): void
+  get table(): Table
+  tableId(): string
+  isHandInProgress(): boolean
+  nextToAct(): number
+  pot(): number
+  /** The stack at a seat, or `null` if the chair is empty or out of range. */
+  chipsAt(seat: number): number | null
+  /**
+   * Every event so far, oldest first.
+   *
+   * A plain array, not a `TableLog` wrapper class: arrays are native in JS.
+   */
+  eventLog(): Array<TableAction>
+}
+
 /** The best five-card hand inside a larger pile, plus its rank. */
 export declare class Eval {
   /**
@@ -98,6 +148,80 @@ export declare class Player {
   /** Adds chips to the stack and to `withdrawn`. Returns the new stack. */
   reload(amount: number): number
   toString(): string
+}
+
+/** What a player chooses to do when it is their turn. */
+export declare class PlayerAction {
+  static fold(): PlayerAction
+  static check(): PlayerAction
+  static call(): PlayerAction
+  static allIn(): PlayerAction
+  /** Opens a bet of `amount` chips. */
+  static bet(amount: number): PlayerAction
+  /** Raises the total bet **to** `amount`, not by `amount`. */
+  static raise(amount: number): PlayerAction
+  /** One of `"Fold"`, `"Check"`, `"Call"`, `"Bet"`, `"Raise"`, `"AllIn"`. */
+  get kind(): string
+  /** The chip amount for a bet or raise, otherwise `null`. */
+  get amount(): number | null
+  toString(): string
+}
+
+/**
+ * A multi-hand game on one table: deal, act, showdown, repeat.
+ *
+ * `pkcore`'s `PokerSession::run_hand` takes a Rust closure. It is
+ * deliberately **not** bound here. Calling a JS function from inside a
+ * `&mut self` method would let that callback re-enter the same session object
+ * and alias the mutable borrow, which is undefined behaviour. Drive the loop
+ * from JS instead — it reads better anyway:
+ *
+ * ```js
+ * session.startHand()
+ * let seat
+ * while ((seat = session.nextActor()) !== null) {
+ *   session.applyAction(seat, PlayerAction.call())
+ * }
+ * const winnings = session.endHand()
+ * ```
+ */
+export declare class PokerSession {
+  constructor(table: Table)
+  /** Shuffles, posts blinds, deals, and increments `handNumber`. */
+  startHand(): void
+  /**
+   * The seat that must act next, or `null` when the betting is done.
+   *
+   * Deals the next street on its own when a betting round closes, so a
+   * caller only ever loops on this one method.
+   */
+  nextActor(): number | null
+  applyAction(seat: number, action: PlayerAction): void
+  /** What the session needs next, without changing whose turn it is. */
+  nextStep(): SessionStep
+  /** Resolves the showdown and pays out. */
+  endHand(): Winnings
+  /**
+   * Returns every committed chip and resets the table after a failed hand.
+   * Returns the number of chips returned.
+   */
+  abortHand(): number
+  isHandComplete(): boolean
+  isHandInProgress(): boolean
+  /** How many hands have been started. */
+  get handNumber(): number
+  get table(): Table
+  /**
+   * The full 52-card deck as shuffled at the start of the current hand, or
+   * `null` before the first hand.
+   */
+  get shuffledDeck(): string | null
+  /** Applies new blinds at the start of the next hand. */
+  setBlinds(forced: ForcedBets): void
+  /** Removes players with no chips. Returns the seats emptied. */
+  eliminateBusted(): Array<number>
+  /** How many seated players still have chips. */
+  countFunded(): number
 }
 
 /** One pot awarded to one or more seats, with the hand that won it. */
@@ -188,6 +312,25 @@ export declare class Seats {
   toString(): string
 }
 
+/**
+ * What the session needs next.
+ *
+ * `kind` is `"PlayerToAct"` (read `seat`), `"StreetAdvanced"`,
+ * `"HandComplete"`, or `"Failed"` (read `error`).
+ */
+export declare class SessionStep {
+  get kind(): string
+  /** The seat that must act, or `null` unless `kind` is `"PlayerToAct"`. */
+  get seat(): number | null
+  /**
+   * Why the hand cannot continue, or `null` unless `kind` is `"Failed"`.
+   *
+   * A failed hand is **not** resolvable with `endHand`; call `abortHand`.
+   */
+  get error(): string | null
+  isComplete(): boolean
+}
+
 /** A card suit. */
 export declare class Suit {
   static spades(): Suit
@@ -230,6 +373,28 @@ export declare class Table {
   isPreflop(): boolean
   isGameOver(): boolean
   minRaise(): number
+  toString(): string
+}
+
+/**
+ * One entry in a table's event log.
+ *
+ * The variants carry different payloads, so rather than binding forty classes
+ * this exposes the shape `pkcore.py` settled on: a `kind` name plus the
+ * optional `seat` and `amount` the event concerns.
+ */
+export declare class TableAction {
+  /**
+   * The event name, such as `"Bet"`, `"Fold"`, or `"DealtFlop"`.
+   *
+   * Read off the `Debug` form rather than a forty-arm match, so a new
+   * `pkcore` variant appears here without a change to this crate.
+   */
+  get kind(): string
+  /** The seat this event concerns, or `null`. */
+  get seat(): number | null
+  /** The chip amount this event concerns, or `null`. */
+  get amount(): number | null
   toString(): string
 }
 
