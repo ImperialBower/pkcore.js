@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Rust / napi-rs
+target/
+Cargo.lock
+*.node
+
+# NOTE: index.js and index.d.ts ARE committed on purpose -- EPIC-85 item 9
+# requires the generated TypeScript definitions to be checked in and
+# type-checked in CI.
