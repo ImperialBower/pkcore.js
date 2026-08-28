@@ -132,10 +132,27 @@ npm run demo       # the showcase script
 
 Push a `v*` tag. `.github/workflows/publish.yml` cross-compiles all five
 targets, assembles the per-platform npm packages, and publishes them plus the
-root `pkcore` package. It needs an `NPM_TOKEN` secret and an `npm` environment.
+root `pkcore` package.
+
+It needs three things:
+
+- a **public** repository — `npm publish --provenance` will not run from a
+  private one;
+- an `NPM_TOKEN` repository secret;
+- a repository environment named `npm`.
 
 `napi artifacts` fails if any target is missing, so a broken matrix leg stops
 the release instead of shipping a partial set.
+
+**Token auth has a deadline.** npm removes direct publishing from access tokens
+around January 2027. After the first release creates the six packages, switch
+each to trusted publishing (OIDC) and delete the token. See `CLAUDE.md`.
+
+## Install-script free
+
+`npm install pkcore` runs no lifecycle scripts and needs no `--allow-scripts`
+flag under npm v12's install-time defaults. The platform binary arrives through
+`optionalDependencies`, not a postinstall build.
 
 ## Licence
 

@@ -91,6 +91,53 @@ most common mistake:
 - `artifacts/` and `npm/` are generated during a release and gitignored. Running
   `napi artifacts` locally also copies `.node` files into the repo root; they
   are gitignored too, but delete them or a stub can shadow a real build.
+- `npm publish --provenance` requires a **public** repository. Provenance fails
+  from a private one.
+
+## Publishing auth: migrate to OIDC before January 2027
+
+`publish.yml` currently authenticates with an `NPM_TOKEN` secret (a granular
+access token). **npm is removing direct publishing from 2FA-bypass tokens around
+January 2027.** After that the token can only stage a publish for a human to
+approve, which does not work unattended.
+
+Migration, in order:
+
+1. Publish once with the token. This is what first creates the six packages
+   (`pkcore` plus `pkcore-darwin-arm64`, `-darwin-x64`, `-linux-x64-gnu`,
+   `-linux-arm64-gnu`, `-win32-x64-msvc`).
+2. On npmjs.com, set a trusted publisher on **each of the six**: repository
+   `ImperialBower/pkcore.js`, workflow `publish.yml`. Trusted publishing is
+   configured per package, which is why step 1 has to happen first — unless npm
+   has since added pre-registration for packages that do not exist yet, in which
+   case skip straight to step 2 and never make a token.
+3. Delete the `NPM_TOKEN` secret and drop `NODE_AUTH_TOKEN` from `publish.yml`.
+   The `id-token: write` permission is already there, and `--provenance` becomes
+   automatic under OIDC.
+
+Related, already in effect since August 2026: a 2FA-bypass token can no longer
+perform account, package, or organization management. Create and rotate tokens
+interactively on the website with 2FA; it cannot be scripted.
+
+`pkcore.py` uses PyPI trusted publishing already
+(`pkcore.py/.github/workflows/publish.yml`, `permissions: id-token: write`), so
+this ends with both bindings on the same OIDC model.
+
+## Keep this package free of install scripts
+
+npm v12 turned install-time lifecycle scripts **off by default**: a package with
+`preinstall`/`install`/`postinstall` now needs the consumer to run
+`npm approve-scripts` or pass `--allow-scripts`. Git and remote-URL dependencies
+are likewise opt-in.
+
+As of 2026-08-28 this package needs none of that — zero install hooks of our own,
+and zero across all 118 packages in the lockfile. That is the point of napi-rs's
+prebuilt-binary model: the platform addon arrives through
+`optionalDependencies`, not a postinstall build.
+
+**Do not add an install hook, a git dependency, or a remote-URL dependency.**
+Any one of them turns `npm install pkcore` into a flagged install for every
+downstream user.
 
 ## Generated files
 
