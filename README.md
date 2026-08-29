@@ -1,5 +1,12 @@
 # pkcore.js
 
+[![npm](https://img.shields.io/npm/v/@imperialbower/pkcore.svg)](https://www.npmjs.com/package/@imperialbower/pkcore)
+[![CI](https://github.com/ImperialBower/pkcore.js/actions/workflows/ci.yml/badge.svg)](https://github.com/ImperialBower/pkcore.js/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/@imperialbower/pkcore.svg)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE-MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE-APACHE)
+[![AI BOM](https://img.shields.io/badge/AI--BOM-tracked-blueviolet)](./AI-BOM.md)
+
 Node.js bindings for [`pkcore`](https://github.com/ImperialBower/pkcore), a
 high-performance poker analysis library written in Rust. Built with
 [napi-rs](https://napi.rs), so it is a **native addon**, not WebAssembly: full
