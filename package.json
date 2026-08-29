@@ -3,6 +3,9 @@
   "version": "0.9.1",
   "description": "Node.js bindings for pkcore, a high-performance poker analysis library",
   "license": "MIT OR Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ImperialBower/pkcore.js.git"
