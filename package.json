@@ -11,10 +11,13 @@
   "types": "index.d.ts",
   "files": [
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "napi": {
     "binaryName": "pkcore",
+    "packageName": "@imperialbower/pkcore",
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",

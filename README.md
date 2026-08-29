@@ -134,6 +134,9 @@ Push a `v*` tag. `.github/workflows/publish.yml` cross-compiles all five
 targets, assembles the per-platform npm packages, and publishes them plus the
 root `pkcore` package.
 
+The five platform binaries publish as `@imperialbower/pkcore-<triple>`; the
+package you install stays plain `pkcore`.
+
 It needs three things:
 
 - a **public** repository — `npm publish --provenance` will not run from a

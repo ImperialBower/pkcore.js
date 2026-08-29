@@ -9,13 +9,14 @@ Everything here is what the repo cannot tell you on its own.
 
 ## Naming
 
-Three different names, on purpose, matching the sibling `pkcore.py`:
+Several different names, on purpose, matching the sibling `pkcore.py`:
 
 | Thing | Name |
 | --- | --- |
 | Repository | `pkcore.js` |
 | Rust crate | `pkcore-js` |
 | npm package | `pkcore` (`require('pkcore')`) |
+| npm platform packages | `@imperialbower/pkcore-<triple>` — see below |
 | Built addon | `pkcore.<platform>.node` |
 
 ## Version rule
@@ -93,6 +94,30 @@ most common mistake:
   are gitignored too, but delete them or a stub can shadow a real build.
 - `npm publish --provenance` requires a **public** repository. Provenance fails
   from a private one.
+
+## Platform packages are scoped; the root package is not
+
+`package.json` sets `napi.packageName` to `@imperialbower/pkcore` while the
+package `name` stays `pkcore`. That split is deliberate:
+
+- users still run `npm install pkcore`;
+- the five platform packages publish as `@imperialbower/pkcore-<triple>`.
+
+**Do not un-scope them.** The first release attempt used unscoped names and npm
+rejected `pkcore-win32-x64-msvc` with
+`403 Package name triggered spam detection`. The other four went through, and a
+later retry by hand with interactive 2FA hit the identical 403 — so it is the
+name, not a rate limit and not the token. No colliding package exists; npm's
+heuristic on unscoped names is simply opaque. A scope proves ownership and skips
+the check, which is why the whole napi-rs ecosystem scopes platform packages
+(`@swc/core-win32-x64-msvc`, `@napi-rs/canvas-win32-x64-msvc`).
+
+Changing `napi.packageName` rewrites the `require` calls in the generated
+`index.js`, so rebuild and commit `index.js` after any change to it.
+
+Four orphan unscoped packages exist at `0.9.1` from the failed first attempt
+(`pkcore-darwin-arm64`, `-darwin-x64`, `-linux-x64-gnu`, `-linux-arm64-gnu`).
+Nothing references them; deprecate them rather than reuse them.
 
 ## Publishing auth: migrate to OIDC before January 2027
 
