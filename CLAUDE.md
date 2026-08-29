@@ -15,7 +15,7 @@ Several different names, on purpose, matching the sibling `pkcore.py`:
 | --- | --- |
 | Repository | `pkcore.js` |
 | Rust crate | `pkcore-js` |
-| npm package | `pkcore` (`require('pkcore')`) |
+| npm package | `@imperialbower/pkcore` (`require('@imperialbower/pkcore')`) |
 | npm platform packages | `@imperialbower/pkcore-<triple>` — see below |
 | Built addon | `pkcore.<platform>.node` |
 
@@ -100,7 +100,7 @@ most common mistake:
 `package.json` sets `napi.packageName` to `@imperialbower/pkcore` while the
 package `name` stays `pkcore`. That split is deliberate:
 
-- users still run `npm install pkcore`;
+- users still run `npm install @imperialbower/pkcore`;
 - the five platform packages publish as `@imperialbower/pkcore-<triple>`.
 
 **Do not un-scope them.** The first release attempt used unscoped names and npm
@@ -161,7 +161,7 @@ prebuilt-binary model: the platform addon arrives through
 `optionalDependencies`, not a postinstall build.
 
 **Do not add an install hook, a git dependency, or a remote-URL dependency.**
-Any one of them turns `npm install pkcore` into a flagged install for every
+Any one of them turns `npm install @imperialbower/pkcore` into a flagged install for every
 downstream user.
 
 ## Generated files

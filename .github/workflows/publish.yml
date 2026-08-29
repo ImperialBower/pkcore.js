@@ -79,7 +79,7 @@ jobs:
       id-token: write # npm provenance
     environment:
       name: npm
-      url: https://www.npmjs.com/package/pkcore
+      url: https://www.npmjs.com/package/@imperialbower/pkcore
     steps:
       - uses: actions/checkout@v5
 
