@@ -1,6 +1,6 @@
 # AI Bill of Materials — pkcore.js
 
-_Last updated: 2026-08-28 · pkcore.js v0.9.1 · npm `@imperialbower/pkcore`_
+_Last updated: 2026-08-30 · pkcore.js v0.11.0 · npm `@imperialbower/pkcore`_
 
 An inventory of every AI component connected to this repository — the tools used
 to author it, the machine-readable context those tools consume, and the AI
@@ -39,14 +39,14 @@ repository.
 |-----------|--------|---------------------------|-------|
 | [`CLAUDE.md`](./CLAUDE.md) | Markdown instructions | **No** | Binding rules, the `Result<Self, napi::Error<String>>` requirement, the `i64` chip-count rule, CI/publish contract |
 | [`AI-BOM.md`](./AI-BOM.md) | Markdown inventory | **Yes** — listed in `package.json`'s `files` | This file |
-| OKF bundle | — | — | None in this repository. `pkcore` carries the shared 27-concept bundle |
+| [`.okf/` bundle](./.okf/index.md) | Markdown + YAML frontmatter (OKF v0.1) | **No** | 12 concepts distilled from `CLAUDE.md` — bindings rules, release/publishing policy, and the Makefile — for quick, linkable lookup. Repo-local; not the shared `pkcore` bundle |
 
 `package.json` uses an explicit `files` allowlist — `index.js`, `index.d.ts`,
 `AI-BOM.md`, `LICENSE-MIT`, `LICENSE-APACHE` — plus `README.md` and
 `package.json`, which npm always includes. This file therefore travels in the npm
 tarball, so a consumer can read the AI provenance without visiting GitHub.
-`CLAUDE.md` stays out: it is instructions for authoring the bindings, not
-information about what ships.
+`CLAUDE.md` and the `.okf/` bundle stay out: they are context for authoring
+and maintaining the bindings, not information about what ships.
 
 ---
 
@@ -118,6 +118,7 @@ for `npm approve-scripts`.
 |----------|---------|
 | [`pkcore` AI-BOM](https://github.com/ImperialBower/pkcore/blob/main/AI-BOM.md) | Algorithm, agent, and integration inventory for the engine |
 | [`CLAUDE.md`](./CLAUDE.md) | Binding rules, CI and publishing contract |
+| [`.okf/` bundle](./.okf/index.md) | Linkable knowledge concepts distilled from `CLAUDE.md` |
 | [`README.md`](./README.md) | Install and usage |
 | EPIC-85 (`pkcore` repo, `docs/epics/EPIC-85_Node_Bindings.md`) | Design contract for these bindings |
 | [`pkcore.py`](https://github.com/ImperialBower/pkcore.py) | Sibling Python binding |
